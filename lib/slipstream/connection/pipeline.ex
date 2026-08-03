@@ -158,6 +158,15 @@ defmodule Slipstream.Connection.Pipeline do
         |> put_state(%{p.state | conn: conn})
         |> put_message(event(%Events.ChannelClosed{reason: reason}))
 
+      {:error, conn, reason, _responses} ->
+        Logger.error(
+          "Closing connection because of error: #{inspect(reason)}"
+        )
+
+        p
+        |> put_state(%{p.state | conn: conn})
+        |> put_message(event(%Events.ChannelClosed{reason: reason}))
+
       :unknown ->
         Logger.error("""
         unknown message #{inspect(p.raw_message)} \
