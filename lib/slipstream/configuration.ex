@@ -18,6 +18,17 @@ defmodule Slipstream.Configuration do
       type: :non_neg_integer,
       default: 30_000
     ],
+    upgrade_timeout_msec: [
+      doc: """
+      The time to wait for the server to respond to the WebSocket upgrade
+      request once the connection has been opened. If the server does not
+      respond within this time, the connection is closed and
+      `c:Slipstream.handle_disconnect/2` is invoked with
+      `{:error, :upgrade_timeout}`. A value of `0` will disable the timeout.
+      """,
+      type: :non_neg_integer,
+      default: 10_000
+    ],
     headers: [
       doc: """
       A set of headers to merge with the request headers when GETing the
@@ -139,6 +150,7 @@ defmodule Slipstream.Configuration do
   @type t :: %__MODULE__{
           uri: %URI{},
           heartbeat_interval_msec: non_neg_integer(),
+          upgrade_timeout_msec: non_neg_integer(),
           headers: [{String.t(), String.t()}],
           json_parser: module(),
           serializer: module(),

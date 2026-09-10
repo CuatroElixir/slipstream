@@ -50,6 +50,24 @@ defmodule Slipstream.Connection.Pipeline do
   end
 
   defp decode_message(
+         %{raw_message: :upgrade_timeout, state: %State{status: :opened}} = p
+       ) do
+    put_message(
+      p,
+      event(%Events.ChannelConnectFailed{reason: :upgrade_timeout})
+    )
+  end
+
+  # the upgrade timer fired just as the connection was established, so it
+  # could not be cancelled
+  # coveralls-ignore-start
+  defp decode_message(%{raw_message: :upgrade_timeout} = p) do
+    put_message(p, event(%Events.NoOp{}))
+  end
+
+  # coveralls-ignore-stop
+
+  defp decode_message(
          %{
            raw_message: {:DOWN, ref, :process, _pid, reason},
            state: %State{client_ref: ref}
@@ -184,7 +202,14 @@ defmodule Slipstream.Connection.Pipeline do
        ) do
     with {:ok, conn} <- Impl.http_connect(config),
          {:ok, conn, ref} <- Impl.websocket_upgrade(conn, config) do
-      put_state(p, %{state | conn: conn, request_ref: ref})
+      state = %{
+        state
+        | conn: conn,
+          request_ref: ref,
+          upgrade_timer: start_upgrade_timer(config)
+      }
+
+      put_state(p, state)
     else
       # coveralls-ignore-start
       {:error, conn, reason} ->
@@ -408,6 +433,8 @@ defmodule Slipstream.Connection.Pipeline do
            state: %State{} = state
          } = p
        ) do
+    if state.upgrade_timer, do: Process.cancel_timer(state.upgrade_timer)
+
     timer =
       if state.config.heartbeat_interval_msec != 0 do
         {:ok, tref} =
@@ -420,7 +447,7 @@ defmodule Slipstream.Connection.Pipeline do
       end
 
     state =
-      %{state | status: :connected, heartbeat_timer: timer}
+      %{state | status: :connected, upgrade_timer: nil, heartbeat_timer: timer}
       |> State.reset_heartbeat()
 
     route_event state, event
@@ -472,6 +499,12 @@ defmodule Slipstream.Connection.Pipeline do
   end
 
   # coveralls-ignore-stop
+
+  defp start_upgrade_timer(%{upgrade_timeout_msec: 0}), do: nil
+
+  defp start_upgrade_timer(%{upgrade_timeout_msec: timeout}) do
+    Process.send_after(self(), :upgrade_timeout, timeout)
+  end
 
   @spec default_return(t()) :: t()
   defp default_return(%{state: state, return: nil} = p) do

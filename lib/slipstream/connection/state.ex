@@ -21,6 +21,7 @@ defmodule Slipstream.Connection.State do
     :websocket,
     :request_ref,
     :join_params,
+    :upgrade_timer,
     :heartbeat_timer,
     :heartbeat_ref,
     :metadata,
