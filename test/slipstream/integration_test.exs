@@ -28,6 +28,64 @@ defmodule Slipstream.IntegrationTest do
     end
   end
 
+  describe "given the server never responds to the WebSocket upgrade request" do
+    setup do
+      {:ok, listen} = :gen_tcp.listen(0, [:binary, active: false])
+      {:ok, port} = :inet.port(listen)
+      test_pid = self()
+
+      spawn_link(fn ->
+        {:ok, socket} = :gen_tcp.accept(listen)
+        {:ok, _upgrade_request} = :gen_tcp.recv(socket, 0)
+        # never respond, but report when the client closes the connection
+        send(test_pid, {:server_recv, :gen_tcp.recv(socket, 0)})
+      end)
+
+      [
+        config: [
+          uri: "ws://localhost:#{port}/socket/websocket",
+          upgrade_timeout_msec: 100
+        ]
+      ]
+    end
+
+    test "the socket is disconnected with :upgrade_timeout reason", c do
+      import Slipstream
+
+      assert {:error, :upgrade_timeout} =
+               c.config
+               |> connect!()
+               |> await_connect(15_000)
+
+      assert_receive {:server_recv, {:error, :closed}}
+    end
+  end
+
+  describe "given the server responds to the WebSocket upgrade request" do
+    setup do
+      [
+        config: [
+          uri: "ws://localhost:4001/socket/websocket",
+          upgrade_timeout_msec: 500
+        ]
+      ]
+    end
+
+    test "the upgrade timeout does not close the connected socket", c do
+      import Slipstream
+
+      socket =
+        c.config
+        |> connect!()
+        |> await_connect!(15_000)
+
+      Process.sleep(1_000)
+
+      assert Process.alive?(socket.channel_pid)
+      refute_received _
+    end
+  end
+
   defmodule EtfSerializer do
     alias Slipstream.Message
 
