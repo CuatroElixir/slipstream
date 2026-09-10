@@ -15,14 +15,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - erlang: "28"
-            elixir: "1.19"
+          - erlang: "29"
+            elixir: "1.20"
             lint: true
             coverage: true
             dialyzer: true
           # One version down.
-          - erlang: "27"
-            elixir: "1.18"
+          - erlang: "28"
+            elixir: "1.19"
           # Oldest version. We technically support OTP 23 but hard to test in CI
           - erlang: "24"
             elixir: "1.14"
@@ -30,7 +30,7 @@ jobs:
       MIX_ENV: test
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Install OTP and Elixir
       uses: erlef/setup-beam@v1
@@ -40,7 +40,7 @@ jobs:
 
     - name: Cache dependencies
       id: cache-deps
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           deps
@@ -62,7 +62,7 @@ jobs:
       if: matrix.lint
 
     - name: Restore cached PLTs
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       id: plt_cache
       if: ${{ matrix.dialyzer }}
       with:
@@ -76,10 +76,10 @@ jobs:
     # Create PLTs if no cached PLTs were found
     - name: Create PLTs
       if: matrix.dialyzer && steps.plt_cache.outputs.cache-hit != 'true'
-      run: MIX_ENV=test mix dialyzer --plt
+      run: mix dialyzer --plt
 
     - name: Run dialyzer
-      run: MIX_ENV=test mix dialyzer
+      run: mix dialyzer
       if: matrix.dialyzer
 
     - name: Run tests with coverage
@@ -107,7 +107,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Determine the elixir version
       run: echo "ELIXIR_VERSION=$(grep -h elixir .tool-versions | awk '{ print $2 }' | awk -F - '{print $1}')" >> $GITHUB_ENV
@@ -122,7 +122,7 @@ jobs:
         otp-version: ${{ env.OTP_VERSION }}
 
     - name: Restore the deps cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       id: deps-cache
       with:
         path: deps
@@ -131,7 +131,7 @@ jobs:
           ${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ env.MIX_ENV }}-deps-
 
     - name: Restore the _build cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       id: build-cache
       with:
         path: _build
@@ -165,15 +165,9 @@ jobs:
       run: echo "REPOSITORY=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2}')" >> $GITHUB_ENV
 
     - name: Create a GitHub Release
-      id: create_release
-      uses: NFIBrokerage/create-release@v4
+      run: gh release create "$TAG" --verify-tag --title "Release $TAG" --notes ""
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ env.TAG }}
-        release_name: Release ${{ env.TAG }}
-        draft: false
-        prerelease: false
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Publish library
       run: mix hex.publish --yes
