@@ -3,8 +3,6 @@ defmodule SlipstreamWeb.InteractiveChannel do
 
   use SlipstreamWeb, :channel
 
-  require Logger
-
   def join("rooms:lobby", _params, socket) do
     {:ok, socket}
   end

@@ -3,8 +3,6 @@ defmodule SlipstreamWeb.TestChannel do
 
   import Slipstream.PidHelpers
 
-  require Logger
-
   @moduledoc false
 
   def join("test:good", %{"test_pid" => proc_string}, socket) do
