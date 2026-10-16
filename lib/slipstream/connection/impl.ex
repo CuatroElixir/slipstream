@@ -121,9 +121,17 @@ defmodule Slipstream.Connection.Impl do
     end
   end
 
+  # Mint.WebSocket always gives control frames with their (possibly empty)
+  # application data
+  def decode_message({control, data} = frame, _state)
+      when control in [:ping, :pong] and is_binary(data),
+      do: frame
+
+  # Mint.WebSocket includes `{:error, reason}` in the list of decoded frames
+  # when a single frame is invalid, e.g. a text frame which is not UTF-8
+  def decode_message({:error, _reason} = error, _state), do: error
+
   # coveralls-ignore-start
-  def decode_message(:ping, _state), do: :ping
-  def decode_message(:pong, _state), do: :pong
   def decode_message({:close, _, _} = message, _state), do: message
   # coveralls-ignore-stop
 

@@ -360,13 +360,11 @@ defmodule Slipstream.Connection.Pipeline do
     put_return(p, {:stop, :normal, state})
   end
 
-  # coveralls-ignore-start
   defp handle_message(%{message: event(%Events.PingReceived{data: data})} = p) do
     push_message(p, {:pong, data})
   end
 
   defp handle_message(%{message: event(%Events.PongReceived{})} = p), do: p
-  # coveralls-ignore-stop
 
   defp handle_message(
          %{message: event(%type{} = event), state: %State{} = state} = p
