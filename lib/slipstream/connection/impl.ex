@@ -22,7 +22,27 @@ defmodule Slipstream.Connection.Impl do
       map_http_scheme(config.uri.scheme),
       config.uri.host,
       config.uri.port,
-      config.mint_opts
+      mint_opts(config)
+    )
+  end
+
+  # bounds writes to the socket unless the user has configured the transport
+  # options themselves
+  def mint_opts(%{send_timeout_msec: timeout} = config)
+      when timeout in [0, nil],
+      do: config.mint_opts
+
+  def mint_opts(config) do
+    defaults = [
+      send_timeout: config.send_timeout_msec,
+      send_timeout_close: true
+    ]
+
+    Keyword.update(
+      config.mint_opts,
+      :transport_opts,
+      defaults,
+      &Keyword.merge(defaults, &1)
     )
   end
 
