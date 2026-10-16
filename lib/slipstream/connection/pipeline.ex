@@ -58,39 +58,39 @@ defmodule Slipstream.Connection.Pipeline do
     put_message(p, event(%Events.ParentProcessExited{reason: reason}))
   end
 
+  # The response to the upgrade request may be split across any number of
+  # messages from the socket (e.g. the status line and headers may arrive in
+  # separate TCP segments), so the status and headers are accumulated in
+  # state until both are known. Any WebSocket frames which arrive in the same
+  # packet as the end of the response are decoded once upgraded.
   defp decode_message(
-         %{
-           raw_message: [
-             {:status, ref, status},
-             {:headers, ref, headers} | _maybe_done
-           ],
-           state: %State{request_ref: ref} = state
-         } = p
-       ) do
-    case Mint.WebSocket.new(state.conn, ref, status, headers) do
-      {:ok, conn, websocket} ->
-        p
-        |> put_message(
-          event(%Events.ChannelConnected{
-            pid: self(),
-            config: state.config,
-            response_headers: headers
-          })
-        )
-        |> put_state(%{p.state | conn: conn, websocket: websocket})
+         %{raw_message: responses, state: %State{websocket: nil} = state} = p
+       )
+       when is_list(responses) do
+    ref = state.request_ref
+    initial = {state.upgrade_status, state.upgrade_headers, []}
 
-      {:error, _conn, reason} ->
-        failure_info = %{
-          status_code: status,
-          resp_headers: headers,
-          reason: reason
-        }
+    {status, headers, data} =
+      Enum.reduce(responses, initial, fn
+        {:status, ^ref, status}, {_status, headers, data} ->
+          {status, headers, data}
 
-        event = %Events.ChannelConnectFailed{
-          reason: {:upgrade_failure, failure_info}
-        }
+        {:headers, ^ref, headers}, {status, _headers, data} ->
+          {status, headers, data}
 
-        put_message(p, event(event))
+        {:data, ^ref, _data} = response, {status, headers, data} ->
+          {status, headers, [response | data]}
+
+        _response, acc ->
+          acc
+      end)
+
+    if is_nil(status) or is_nil(headers) do
+      p
+      |> put_state(%{state | upgrade_status: status, upgrade_headers: headers})
+      |> put_message(event(%Events.NoOp{}))
+    else
+      upgrade(p, status, headers, Enum.reverse(data))
     end
   end
 
@@ -508,6 +508,49 @@ defmodule Slipstream.Connection.Pipeline do
 
   defp build_event(:channel_connect_failed, attrs) do
     %Events.ChannelConnectFailed{reason: attrs.reason}
+  end
+
+  defp upgrade(%{state: state} = p, status, headers, data) do
+    case Mint.WebSocket.new(state.conn, state.request_ref, status, headers) do
+      {:ok, conn, websocket} ->
+        connected =
+          event(%Events.ChannelConnected{
+            pid: self(),
+            config: state.config,
+            response_headers: headers
+          })
+
+        p =
+          put_state(p, %{
+            state
+            | conn: conn,
+              websocket: websocket,
+              upgrade_status: nil,
+              upgrade_headers: nil
+          })
+
+        case data do
+          [] ->
+            put_message(p, connected)
+
+          data ->
+            p = decode_message(%{p | raw_message: data})
+            put_message(p, [connected | List.wrap(p.message)])
+        end
+
+      {:error, _conn, reason} ->
+        failure_info = %{
+          status_code: status,
+          resp_headers: headers,
+          reason: reason
+        }
+
+        event = %Events.ChannelConnectFailed{
+          reason: {:upgrade_failure, failure_info}
+        }
+
+        put_message(p, event(event))
+    end
   end
 
   # --- token API
