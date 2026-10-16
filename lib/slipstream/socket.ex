@@ -234,13 +234,23 @@ defmodule Slipstream.Socket do
     socket
   end
 
+  # Calls the connection process. A call which times out or a connection
+  # which exits during the call is returned as an error rather than exiting
+  # the calling (client) process.
   @doc false
   def call(%__MODULE__{} = socket, message, timeout) do
     if pid = channel_pid(socket) do
-      {:ok, GenServer.call(pid, message, timeout)}
+      safe_call(pid, message, timeout)
     else
       {:error, :not_connected}
     end
+  end
+
+  defp safe_call(pid, message, timeout) do
+    GenServer.call(pid, message, timeout)
+  catch
+    :exit, {:timeout, _call} -> {:error, :timeout}
+    :exit, _reason -> {:error, :not_connected}
   end
 
   @doc false
