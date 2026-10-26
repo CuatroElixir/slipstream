@@ -84,6 +84,21 @@ defmodule Slipstream.Configuration do
       type: :keyword_list,
       default: [protocols: [:http1]]
     ],
+    send_timeout_msec: [
+      doc: """
+      The maximum time to wait when writing to the socket. If a write does
+      not complete within this time (for example because the remote server
+      has stopped reading, so the TCP send buffer is full) the socket is
+      closed and `c:Slipstream.handle_disconnect/2` is invoked with
+      `{:send_failure, reason}`. Without this bound a stalled write blocks
+      the connection process indefinitely, which also prevents heartbeats
+      from detecting the dead connection. This sets the `:send_timeout` and
+      `:send_timeout_close` transport options unless they are given in
+      `:mint_opts`. A value of `0` will disable the timeout.
+      """,
+      type: :non_neg_integer,
+      default: 30_000
+    ],
     extensions: [
       doc: """
       A list of extensions to pass to `Mint.WebSocket.upgrade/4`.
@@ -152,6 +167,7 @@ defmodule Slipstream.Configuration do
           heartbeat_interval_msec: non_neg_integer(),
           upgrade_timeout_msec: non_neg_integer(),
           headers: [{String.t(), String.t()}],
+          send_timeout_msec: non_neg_integer(),
           json_parser: module(),
           serializer: module(),
           reconnect_after_msec: [non_neg_integer()],
