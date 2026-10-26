@@ -310,6 +310,13 @@ defmodule Slipstream do
 
   will translate to a reply of `:ok` (and the same for `{:error, %{}}`).
 
+  Phoenix channels may also reply with statuses other than `:ok` and
+  `:error`, for example `{:reply, {:accepted, %{id: 1}}, socket}`. These
+  statuses are given as strings rather than atoms (since they come from the
+  remote server), so the above reply is received as
+  `{"accepted", %{"id" => 1}}` and `{:reply, :accepted, socket}` is received
+  as `"accepted"`.
+
   ## Examples
 
       # on the Phoenix.Channel (server) side:
@@ -327,6 +334,8 @@ defmodule Slipstream do
           | :error
           | {:ok, json_serializable()}
           | {:error, json_serializable()}
+          | String.t()
+          | {String.t(), json_serializable()}
 
   # the family of GenServer-wrapping callbacks
 

@@ -6,6 +6,7 @@ defmodule Slipstream.Events do
   alias Slipstream.Message
 
   alias __MODULE__.{
+    NoOp,
     MessageReceived,
     ReplyReceived,
     HeartbeatAcknowledged,
@@ -35,12 +36,17 @@ defmodule Slipstream.Events do
   @spec map(atom() | Message.t(), State.t()) :: struct()
   def map(server_message, connection_state)
 
-  # coveralls-ignore-start
   def map({:ping, data}, _state), do: %PingReceived{data: data}
   def map({:pong, data}, _state), do: %PongReceived{data: data}
+
+  # coveralls-ignore-start
   def map({:close, _, _}, _state), do: %ChannelClosed{reason: :closed_by_remote}
 
   # coveralls-ignore-stop
+
+  # RFC 6455 requires the connection to be failed when a frame is invalid
+  def map({:error, reason}, _state),
+    do: %ChannelClosed{reason: {:invalid_frame, reason}}
 
   def map(
         %Message{
@@ -118,9 +124,13 @@ defmodule Slipstream.Events do
         },
         state
       ) do
-    true = State.join_ref?(state, ref)
-
-    %TopicJoinClosed{topic: topic, reason: {:error, payload}, ref: ref}
+    if State.join_ref?(state, ref) do
+      %TopicJoinClosed{topic: topic, reason: {:error, payload}, ref: ref}
+    else
+      # the error is for a join which is no longer tracked, e.g. a late
+      # message for a topic which has since been closed or rejoined
+      %NoOp{}
+    end
   end
 
   def map(
