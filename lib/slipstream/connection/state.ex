@@ -25,6 +25,8 @@ defmodule Slipstream.Connection.State do
     :heartbeat_timer,
     :heartbeat_ref,
     :metadata,
+    :upgrade_status,
+    :upgrade_headers,
     status: :opened,
     joins: %{},
     leaves: %{},
