@@ -1041,8 +1041,20 @@ defmodule Slipstream do
   match on it in `c:handle_reply/3`.
 
   If you are pushing especially large messages, you may need to adjust the
-  `timeout` argument so that the GenServer call does not exit with `:timeout`.
-  The default value is `5_000` msec (5 seconds).
+  `timeout` argument. The default value is `5_000` msec (5 seconds).
+
+  `push/5` does not exit the calling process. It returns an error when the
+  push could not be written:
+
+  - `{:error, :not_joined}` - the topic is not joined
+  - `{:error, :not_connected}` - the socket is not connected, or the
+    connection closed during the push
+  - `{:error, :timeout}` - the connection process did not accept the push
+    within `timeout`
+  - `{:error, {:send_failure, reason}}` - writing to the socket failed and
+    the connection has been closed
+  - `{:error, %Slipstream.Serializer.EncodeError{}}` - `params` could not be
+    encoded by the serializer
 
   ## Examples
 
@@ -1084,21 +1096,10 @@ defmodule Slipstream do
       timeout: timeout
     }
 
-    with true <- Socket.joined?(socket, topic),
-         {:ok, ref} <- route_command(command) do
-      {:ok, ref}
+    if Socket.joined?(socket, topic) do
+      route_command(command)
     else
-      false ->
-        {:error, :not_joined}
-
-      # e.g. if the genserver call fails by timeout
-      # we're not gonna test that though. imagine how big the message would have
-      # to be
-      # coveralls-ignore-start
-      other_return ->
-        other_return
-
-        # coveralls-ignore-stop
+      {:error, :not_joined}
     end
   end
 

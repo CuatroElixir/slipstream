@@ -49,8 +49,12 @@ defmodule Slipstream.CommandRouter do
     Socket.send(socket, command(cmd))
   end
 
-  # this one is a synchronous push with a reply from the connection process
+  # this one is a synchronous push with a reply from the connection process:
+  # either the push's ref or an error
   def route_command(%PushMessage{socket: socket} = cmd) do
-    Socket.call(socket, command(cmd), cmd.timeout)
+    case Socket.call(socket, command(cmd), cmd.timeout) do
+      ref when is_binary(ref) -> {:ok, ref}
+      {:error, _reason} = error -> error
+    end
   end
 end

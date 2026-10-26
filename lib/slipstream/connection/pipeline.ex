@@ -283,22 +283,39 @@ defmodule Slipstream.Connection.Pipeline do
        ) do
     {ref, state} = State.next_ref(state)
 
-    p =
-      p
-      |> put_state(state)
-      |> push_message(%Message{
-        topic: cmd.topic,
-        event: cmd.event,
-        payload: cmd.payload,
-        ref: ref,
-        join_ref: state.joins[cmd.topic]
-      })
+    message = %Message{
+      topic: cmd.topic,
+      event: cmd.event,
+      payload: cmd.payload,
+      ref: ref,
+      join_ref: state.joins[cmd.topic]
+    }
 
-    case p do
+    case encode_and_push(message, state) do
+      {:ok, state} ->
+        p
+        |> put_state(state)
+        |> put_return({:reply, ref, state})
+
+      {:encode_error, exception} ->
+        p
+        |> put_state(state)
+        |> put_return({:reply, {:error, exception}, state})
+
+      # N.B.: writing to the socket only fails when the TCP connection breaks
+      # in the middle of a write, which cannot be arranged reliably in a test
       # coveralls-ignore-start
-      %{return: {:stop, _reason, _state}} = p -> p
-      # coveralls-ignore-stop
-      p -> put_return(p, {:reply, ref, state})
+      {:error, state, reason} ->
+        route_event state,
+                    %Events.ChannelClosed{reason: {:send_failure, reason}}
+
+        p
+        |> put_state(state)
+        |> put_return(
+          {:stop, :normal, {:error, {:send_failure, reason}}, state}
+        )
+
+        # coveralls-ignore-stop
     end
   end
 
@@ -309,17 +326,41 @@ defmodule Slipstream.Connection.Pipeline do
          } = p
        ) do
     {ref, state} = State.next_ref(state)
-    state = %{state | joins: Map.put(state.joins, cmd.topic, ref)}
 
-    p
-    |> put_state(state)
-    |> push_message(%Message{
+    message = %Message{
       topic: cmd.topic,
       event: "phx_join",
       payload: cmd.payload,
-      ref: state.current_ref_str,
-      join_ref: state.current_ref_str
-    })
+      ref: ref,
+      join_ref: ref
+    }
+
+    case encode_and_push(message, state) do
+      {:ok, state} ->
+        put_state(p, %{state | joins: Map.put(state.joins, cmd.topic, ref)})
+
+      {:encode_error, exception} ->
+        route_event state, %Events.TopicJoinFailed{
+          topic: cmd.topic,
+          ref: ref,
+          response: {:encode_error, exception}
+        }
+
+        put_state(p, state)
+
+      # N.B.: writing to the socket only fails when the TCP connection breaks
+      # in the middle of a write, which cannot be arranged reliably in a test
+      # coveralls-ignore-start
+      {:error, state, reason} ->
+        route_event state,
+                    %Events.ChannelClosed{reason: {:send_failure, reason}}
+
+        p
+        |> put_state(state)
+        |> put_return({:stop, :normal, state})
+
+        # coveralls-ignore-stop
+    end
   end
 
   defp handle_message(
@@ -595,5 +636,14 @@ defmodule Slipstream.Connection.Pipeline do
 
         # coveralls-ignore-stop
     end
+  end
+
+  # messages are encoded in the connection process, so a payload which the
+  # serializer cannot encode must not crash it
+  defp encode_and_push(%Message{} = message, state) do
+    Impl.push_message(message, state)
+  rescue
+    exception in [Slipstream.Serializer.EncodeError] ->
+      {:encode_error, exception}
   end
 end
