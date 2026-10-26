@@ -543,6 +543,9 @@ defmodule Slipstream do
 
   The default implementation of this callback requests reconnection
 
+  If the connection process exits unexpectedly (for example if it crashes),
+  `reason` is `{:connection_exited, exit_reason}`.
+
   ## Examples
 
       @impl Slipstream
@@ -1550,6 +1553,20 @@ defmodule Slipstream do
 
       @impl Slipstream
       def handle_info(Slipstream.Signatures.event(event), socket) do
+        Slipstream.Callback.dispatch(__MODULE__, event, socket)
+      end
+
+      # the connection process exited without sending a ChannelClosed event,
+      # e.g. because it crashed
+      def handle_info(
+            {:DOWN, ref, :process, _pid, reason},
+            %Slipstream.Socket{channel_monitor: ref} = socket
+          )
+          when is_reference(ref) do
+        event = %Slipstream.Events.ChannelClosed{
+          reason: {:connection_exited, reason}
+        }
+
         Slipstream.Callback.dispatch(__MODULE__, event, socket)
       end
 

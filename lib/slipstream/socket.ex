@@ -18,6 +18,7 @@ defmodule Slipstream.Socket do
 
   defstruct [
     :channel_pid,
+    :channel_monitor,
     :socket_pid,
     :channel_config,
     :response_headers,
@@ -33,6 +34,7 @@ defmodule Slipstream.Socket do
   @typedoc since: "0.1.0"
   @type t :: %__MODULE__{
           channel_pid: nil | pid(),
+          channel_monitor: nil | reference(),
           socket_pid: pid(),
           channel_config: Slipstream.Configuration.t() | nil,
           metadata: %{atom() => String.t() | %{String.t() => String.t()}},
@@ -257,11 +259,14 @@ defmodule Slipstream.Socket do
 
   def apply_event(%__MODULE__{} = socket, %Events.ChannelConnected{} = event) do
     socket = TelemetryHelper.conclude_connect(socket, event)
+    channel_config = event.config || socket.channel_config
 
     %{
       socket
       | channel_pid: event.pid,
-        channel_config: event.config || socket.channel_config,
+        channel_monitor:
+          monitor_channel(socket.channel_monitor, event.pid, channel_config),
+        channel_config: channel_config,
         reconnect_counter: 0
     }
   end
@@ -286,9 +291,12 @@ defmodule Slipstream.Socket do
   end
 
   def apply_event(%__MODULE__{} = socket, %Events.ChannelClosed{}) do
+    demonitor_channel(socket.channel_monitor)
+
     %{
       socket
       | channel_pid: nil,
+        channel_monitor: nil,
         joins:
           Enum.into(socket.joins, %{}, fn {topic, %Join{} = join} ->
             {topic, %{join | status: :closed}}
@@ -297,6 +305,27 @@ defmodule Slipstream.Socket do
   end
 
   def apply_event(socket, _event), do: socket
+
+  # The client monitors the connection process so that it is told about the
+  # connection exiting without first sending a ChannelClosed event, e.g. by
+  # crashing. In test mode the "connection" is the test process, so it is
+  # not monitored.
+  defp monitor_channel(previous_monitor, pid, config) do
+    demonitor_channel(previous_monitor)
+
+    case config do
+      %Slipstream.Configuration{test_mode?: true} -> nil
+      _ -> Process.monitor(pid)
+    end
+  end
+
+  defp demonitor_channel(nil), do: :ok
+
+  defp demonitor_channel(ref) do
+    Process.demonitor(ref, [:flush])
+
+    :ok
+  end
 
   @doc false
   @spec next_reconnect_time(t()) :: {non_neg_integer(), t()}
