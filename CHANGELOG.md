@@ -6,6 +6,29 @@ The format is based on [Keep a
 Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.3.0 - 2026-10-26
+
+### Added
+
+- Added an `upgrade_timeout_msec` configuration option which limits how long
+  the connection waits for the server to respond to the WebSocket upgrade
+  request ([#88](https://github.com/NFIBrokerage/slipstream/pull/88))
+    - Previously a server which accepted the TCP connection but never
+      responded to the upgrade request would cause the connection to wait
+      forever.
+    - The timeout defaults to ten seconds. When it elapses, the connection is
+      closed and `c:Slipstream.handle_disconnect/2` is invoked with
+      `{:error, :upgrade_timeout}`. Set the option to `0` to disable the
+      timeout.
+
+### Fixed
+
+- Fixed a `CaseClauseError` crash in the connection process when the server
+  sends a WebSocket close frame after the HTTP/1 request has completed
+  ([#86](https://github.com/NFIBrokerage/slipstream/pull/86))
+    - The error is now handled as a disconnect and passed to
+      `c:Slipstream.handle_disconnect/2`.
+
 ## 1.2.2 - 2025-12-15
 
 ### Fixed
