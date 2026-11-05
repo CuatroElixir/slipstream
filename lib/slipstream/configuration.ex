@@ -5,6 +5,9 @@ defmodule Slipstream.Configuration do
       The endpoint to which the websocket will connect. Schemes of "ws" and
       "wss" are supported, and a scheme must be provided. Either binaries or
       `URI` structs are accepted. E.g. `"ws://localhost:4000/socket/websocket"`.
+      To connect to a Unix domain socket, pass a `URI` struct whose host is
+      `{:local, path}` and whose port is `0`. E.g.
+      `%URI{scheme: "ws", host: {:local, "/path/to.sock"}, port: 0, path: "/socket/websocket"}`.
       """,
       type: {:custom, __MODULE__, :parse_uri, []},
       required: true
@@ -191,7 +194,7 @@ defmodule Slipstream.Configuration do
     with %URI{} = uri <- proposed_uri |> assume_port(),
          {:scheme, scheme} when scheme in @known_schemes <-
            {:scheme, uri.scheme},
-         {:port, port} when is_integer(port) and port > 0 <- {:port, uri.port} do
+         :ok <- validate_port(uri) do
       {:ok, uri}
     else
       # coveralls-ignore-start
@@ -221,6 +224,14 @@ defmodule Slipstream.Configuration do
   # coveralls-ignore-stop
 
   defp assume_port(uri), do: uri
+
+  # A Unix domain socket address `{:local, path}` takes port 0.
+  defp validate_port(%URI{host: {:local, _path}, port: 0}), do: :ok
+
+  defp validate_port(%URI{port: port}) when is_integer(port) and port > 0,
+    do: :ok
+
+  defp validate_port(%URI{port: port}), do: {:port, port}
 
   @doc false
   # coveralls-ignore-start

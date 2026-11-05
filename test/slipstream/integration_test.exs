@@ -28,6 +28,57 @@ defmodule Slipstream.IntegrationTest do
     end
   end
 
+  describe "given the server listens on a Unix domain socket" do
+    setup do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "slipstream-#{System.unique_integer([:positive])}.sock"
+        )
+
+      start_supervised!(
+        {Plug.Cowboy,
+         scheme: :http,
+         plug: SlipstreamWeb.Endpoint,
+         options: [ip: {:local, path}, port: 0, ref: __MODULE__.UnixSocket]}
+      )
+
+      on_exit(fn -> File.rm(path) end)
+
+      uri = %URI{
+        scheme: "ws",
+        host: {:local, path},
+        port: 0,
+        path: "/socket/websocket"
+      }
+
+      [config: [uri: uri]]
+    end
+
+    test "the socket connects", c do
+      import Slipstream
+
+      assert {:ok, socket} =
+               c.config
+               |> connect!()
+               |> await_connect(15_000)
+
+      assert Slipstream.Socket.connected?(socket)
+    end
+
+    test "the socket connects with a given Host header", c do
+      import Slipstream
+
+      assert {:ok, socket} =
+               c.config
+               |> Keyword.put(:headers, [{"Host", "example.com"}])
+               |> connect!()
+               |> await_connect(15_000)
+
+      assert Slipstream.Socket.connected?(socket)
+    end
+  end
+
   describe "given the server never responds to the WebSocket upgrade request" do
     setup do
       {:ok, listen} = :gen_tcp.listen(0, [:binary, active: false])
