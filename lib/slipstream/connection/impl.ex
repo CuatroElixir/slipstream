@@ -17,12 +17,30 @@ defmodule Slipstream.Connection.Impl do
     send(pid, event(event))
   end
 
+  def http_connect(%{uri: %URI{host: {:local, _path}, port: 0}} = config) do
+    local_connect(config)
+  end
+
   def http_connect(config) do
     Mint.HTTP.connect(
       map_http_scheme(config.uri.scheme),
       config.uri.host,
       config.uri.port,
       config.mint_opts
+    )
+  end
+
+  # Mint's success typing narrows the address to a binary, but Mint accepts
+  # any :inet.socket_address/0 such as the Unix domain socket address
+  # `{:local, path}` as long as the :hostname option is given.
+  @dialyzer {:nowarn_function, local_connect: 1}
+
+  defp local_connect(config) do
+    Mint.HTTP.connect(
+      map_http_scheme(config.uri.scheme),
+      config.uri.host,
+      0,
+      Keyword.put_new(config.mint_opts, :hostname, "localhost")
     )
   end
 
@@ -41,10 +59,25 @@ defmodule Slipstream.Connection.Impl do
       map_ws_scheme(config.uri.scheme),
       conn,
       path(config.uri),
-      config.headers,
+      upgrade_headers(config),
       extensions: config.extensions
     )
   end
+
+  # Mint would send `Host: localhost:0` for a Unix domain socket address, which
+  # some servers reject, so send the bare hostname unless one was given.
+  defp upgrade_headers(%{uri: %URI{host: {:local, _path}, port: 0}} = config) do
+    if Enum.any?(config.headers, fn {key, _} ->
+         String.downcase(key) == "host"
+       end) do
+      config.headers
+    else
+      hostname = Keyword.get(config.mint_opts, :hostname, "localhost")
+      [{"host", hostname} | config.headers]
+    end
+  end
+
+  defp upgrade_headers(config), do: config.headers
 
   # ---
 

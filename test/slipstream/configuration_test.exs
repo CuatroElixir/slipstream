@@ -39,4 +39,32 @@ defmodule Slipstream.ConfigurationTest do
       assert message =~ ~s(unknown scheme "http")
     end
   end
+
+  describe "given a Unix domain socket URI" do
+    setup do
+      [
+        uri: %URI{
+          scheme: "ws",
+          host: {:local, "/tmp/slipstream.sock"},
+          port: 0,
+          path: "/socket/websocket"
+        }
+      ]
+    end
+
+    test "port 0 passes validation with a {:local, path} host", c do
+      assert {:ok, %Config{uri: uri}} = Config.validate(uri: c.uri)
+      assert %URI{host: {:local, "/tmp/slipstream.sock"}, port: 0} = uri
+    end
+
+    test "port 0 fails validation with a binary host", c do
+      uri = Map.put(c.uri, :host, "localhost")
+
+      assert {:error,
+              %NimbleOptions.ValidationError{key: :uri, message: message}} =
+               Config.validate(uri: uri)
+
+      assert message =~ "unparsable port value 0"
+    end
+  end
 end
