@@ -88,7 +88,7 @@ defmodule Slipstream.RetryBackoffTest do
       refute_receive command(%Commands.JoinTopic{})
     end
 
-    test "once left, a topic may be rejoined with the same params passed during join",
+    test "once left, a topic's join is gone: rejoin answers never_joined and join joins it again",
          c do
       topic = c.topic
       payload = c.params
@@ -99,20 +99,14 @@ defmodule Slipstream.RetryBackoffTest do
         |> await_leave(topic)
 
       refute joined?(socket, topic)
+      refute Map.has_key?(socket.joins, topic)
 
-      assert {:ok, socket} = rejoin(socket, c.topic)
+      assert {:error, :never_joined} = rejoin(socket, topic)
 
-      # N.B. we have to set the timeout on this assert_receive a bit higher
-      # because the first rejoin time in default configuration is 100ms
-      assert_receive command(
-                       %Commands.JoinTopic{topic: ^topic, payload: ^payload} =
-                         command
-                     ),
-                     500
-
-      CommandRouter.route_command(command)
-
-      assert await_join!(socket, topic) |> joined?(topic)
+      assert socket
+             |> join(topic, payload)
+             |> await_join!(topic)
+             |> joined?(topic)
     end
   end
 end

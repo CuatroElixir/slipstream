@@ -272,17 +272,21 @@ defmodule Slipstream.Socket do
       ) do
     socket
     |> TelemetryHelper.conclude_join(event)
-    |> put_in([Access.key(:joins), topic, Access.key(:status)], :joined)
-    |> put_in([Access.key(:joins), topic, Access.key(:rejoin_counter)], 0)
+    |> update_join(topic, &%{&1 | status: :joined, rejoin_counter: 0})
   end
 
+  # A left topic is done with: the client left it or the server closed its
+  # channel. Its join goes, so a client that joins a fresh topic per task does
+  # not keep one per task it ever ran (the socket is copied into every command
+  # it sends). Rejoining a left topic takes `join/3`; `rejoin/3` answers
+  # `{:error, :never_joined}`.
+  def apply_event(%__MODULE__{} = socket, %Events.TopicLeft{topic: topic}),
+    do: %__MODULE__{socket | joins: Map.delete(socket.joins, topic)}
+
+  # A topic closed by an error or a refused join keeps its join for `rejoin/3`.
   def apply_event(%__MODULE__{} = socket, %event{topic: topic})
-      when event in [
-             Events.TopicLeft,
-             Events.TopicJoinFailed,
-             Events.TopicJoinClosed
-           ] do
-    put_in(socket, [Access.key(:joins), topic, Access.key(:status)], :closed)
+      when event in [Events.TopicJoinFailed, Events.TopicJoinClosed] do
+    update_join(socket, topic, &%{&1 | status: :closed})
   end
 
   def apply_event(%__MODULE__{} = socket, %Events.ChannelClosed{}) do
@@ -297,6 +301,18 @@ defmodule Slipstream.Socket do
   end
 
   def apply_event(socket, _event), do: socket
+
+  # An event can arrive for a topic whose join is already gone (a second
+  # close, a reply after the close); there is nothing left to update.
+  defp update_join(%__MODULE__{joins: joins} = socket, topic, fun) do
+    case Map.fetch(joins, topic) do
+      {:ok, %Join{} = join} ->
+        %__MODULE__{socket | joins: Map.put(joins, topic, fun.(join))}
+
+      :error ->
+        socket
+    end
+  end
 
   @doc false
   @spec next_reconnect_time(t()) :: {non_neg_integer(), t()}
