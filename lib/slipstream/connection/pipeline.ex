@@ -396,7 +396,12 @@ defmodule Slipstream.Connection.Pipeline do
   defp handle_message(
          %{message: event(%type{} = event), state: %State{} = state} = p
        )
-       when type in [Events.TopicJoinFailed, Events.TopicJoinClosed] do
+       when type in [
+              Events.TopicJoinFailed,
+              Events.TopicJoinClosed,
+              Events.TopicLeft
+            ] do
+    # A closed topic's join ref is never used again.
     state = %{state | joins: Map.delete(state.joins, event.topic)}
 
     route_event state, event
